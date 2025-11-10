@@ -2,7 +2,6 @@ package tree
 
 // FlattenTree はツリー構造を平坦なリストに変換する（表示用）
 // 展開されているノードのみを含む
-// 展開されているノードのみを含む
 func FlattenTree(root *Node) []*Node {
 	result := make([]*Node, 0)
 	flattenRecursive(root, &result)
