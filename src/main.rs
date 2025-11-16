@@ -57,7 +57,7 @@ fn run_app<B: ratatui::backend::Backend>(
     app: &mut App,
 ) -> Result<()> {
     loop {
-        let items = app.get_flat_tree();
+        let items = app.get_flat_tree_with_lines();
         let selected_index = app.selected_index;
         terminal.draw(|f| render(f, &items, selected_index))?;
 

@@ -4,15 +4,15 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders, Paragraph, Table, Row, Cell},
     Frame,
 };
 
-pub fn render(frame: &mut Frame, items: &[(usize, FileNode)], selected_index: usize) {
+pub fn render(frame: &mut Frame, items: &[(usize, FileNode, bool, Vec<bool>)], selected_index: usize) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3), // ヘッダー（レジェンド）
+            Constraint::Length(5), // ヘッダー（レジェンド）- 2行分に拡大
             Constraint::Min(0),    // メインコンテンツ
         ])
         .split(frame.area());
@@ -24,8 +24,8 @@ pub fn render(frame: &mut Frame, items: &[(usize, FileNode)], selected_index: us
 fn render_legend(frame: &mut Frame, area: Rect) {
     let legend_chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1), Constraint::Length(1)])
-        .margin(1)
+        .constraints([Constraint::Length(2), Constraint::Length(2)])
+        .margin(0)
         .split(area);
 
     // Lines of Code レジェンド
@@ -57,13 +57,15 @@ fn render_legend(frame: &mut Frame, area: Rect) {
 
     frame.render_widget(
         Paragraph::new(lines_legend)
-            .block(Block::default().borders(Borders::NONE)),
+            .block(Block::default().borders(Borders::NONE))
+            .style(Style::default().bg(Color::Black)),
         legend_chunks[0],
     );
 
     frame.render_widget(
         Paragraph::new(freq_legend)
-            .block(Block::default().borders(Borders::NONE)),
+            .block(Block::default().borders(Borders::NONE))
+            .style(Style::default().bg(Color::Black)),
         legend_chunks[1],
     );
 }
@@ -91,77 +93,82 @@ fn create_legend_line(label: &str, items: &[(usize, &str)], is_lines: bool) -> L
     Line::from(spans)
 }
 
-fn render_tree(frame: &mut Frame, area: Rect, items: &[(usize, FileNode)], selected_index: usize) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title("project-root");
+fn render_tree(frame: &mut Frame, area: Rect, items: &[(usize, FileNode, bool, Vec<bool>)], selected_index: usize) {
+    // ヘッダー行を作成
+    let header = Row::new(vec![
+        Cell::from(""),
+        Cell::from(format!("{:>15} ", "LINES")).style(Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+        Cell::from(format!("{:>15} ", "CHANGES")).style(Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+    ]);
 
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-
-    // ヘッダー行
-    let header_area = Rect {
-        x: inner.x,
-        y: inner.y,
-        width: inner.width,
-        height: 1,
-    };
-
-    let header = create_header_line(inner.width);
-    frame.render_widget(Paragraph::new(header), header_area);
-
-    // ツリー行
-    let tree_area = Rect {
-        x: inner.x,
-        y: inner.y + 1,
-        width: inner.width,
-        height: inner.height.saturating_sub(1),
-    };
-
-    let mut lines = Vec::new();
-    for (index, (depth, node)) in items.iter().skip(1).enumerate() {
-        // rootをスキップ、インデックスを調整
+    // データ行を作成
+    let mut rows = Vec::new();
+    for (index, (depth, node, is_last, parent_lines)) in items.iter().skip(1).enumerate() {
         let actual_index = index + 1;
         let is_selected = actual_index == selected_index;
-        let line = create_tree_line(*depth, node, inner.width, is_selected);
-        lines.push(line);
+
+        let row = create_table_row(*depth, node, *is_last, parent_lines, is_selected);
+        rows.push(row);
     }
 
-    frame.render_widget(Paragraph::new(lines), tree_area);
-}
-
-fn create_header_line(width: u16) -> Line<'static> {
-    let name_width = (width as f32 * 0.6) as usize;
-    let lines_width = 10;
-    let changes_width = 10;
-
-    let spans = vec![
-        Span::styled(
-            format!("{:<name_width$}", "", name_width = name_width),
-            Style::default(),
-        ),
-        Span::styled(
-            format!("{:>lines_width$}", "LINES", lines_width = lines_width),
-            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
-        ),
-        Span::styled("  ", Style::default()),
-        Span::styled(
-            format!("{:>changes_width$}", "CHANGES", changes_width = changes_width),
-            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
-        ),
+    // 列幅の設定
+    let widths = [
+        Constraint::Percentage(50),  // Name列（可変）
+        Constraint::Length(32),       // LINES列（固定32文字）
+        Constraint::Length(32),       // CHANGES列（固定32文字）
     ];
 
-    Line::from(spans)
+    let table = Table::new(rows, widths)
+        .header(header)
+        .block(Block::default().borders(Borders::ALL).title("project-root"))
+        .column_spacing(0); // スペースなし（各セル内でパディングを制御）
+
+    frame.render_widget(table, area);
 }
 
-fn create_tree_line(depth: usize, node: &FileNode, width: u16, is_selected: bool) -> Line<'static> {
-    // ツリー罫線を生成（階層構造を視覚化）
+/// Tableの行を作成
+fn create_table_row(depth: usize, node: &FileNode, is_last: bool, parent_lines: &[bool], is_selected: bool) -> Row<'static> {
+    // Name列の内容を作成
+    let name_cell = create_name_cell(depth, node, is_last, parent_lines, is_selected);
+
+    // LINES列の内容を作成
+    let lines_cell = create_lines_cell(node, is_selected);
+
+    // CHANGES列の内容を作成
+    let changes_cell = create_changes_cell(node, is_selected);
+
+    let style = if is_selected {
+        Style::default().bg(Color::DarkGray)
+    } else {
+        Style::default()
+    };
+
+    Row::new(vec![name_cell, lines_cell, changes_cell])
+        .style(style)
+        .height(1)
+}
+
+/// Name列のセルを作成
+fn create_name_cell(depth: usize, node: &FileNode, is_last: bool, parent_lines: &[bool], _is_selected: bool) -> Cell<'static> {
     let tree_lines = if depth > 0 {
         let mut lines = String::new();
-        for _ in 0..depth - 1 {
-            lines.push_str("  ");  // 親階層のインデント
+
+        // 親階層の継続線を描画
+        for &continues in parent_lines {
+            if continues {
+                lines.push_str("│ ");
+            } else {
+                lines.push_str("  ");
+            }
         }
-        lines.push_str("│ ");  // 現在の階層の縦線
+
+        // 現在階層の分岐線を描画
+        if is_last {
+            lines.push_str("└─");
+        } else {
+            lines.push_str("├─");
+        }
+
         lines
     } else {
         String::new()
@@ -177,59 +184,87 @@ fn create_tree_line(depth: usize, node: &FileNode, width: u16, is_selected: bool
         "[ ] "
     };
 
-    let name_prefix = format!("{}{}", tree_lines, icon);
     let display_name = if node.is_dir {
         format!("{}/", node.name)
     } else {
         node.name.clone()
     };
 
-    let name_width = (width as f32 * 0.6) as usize;
-    let name_text = format!("{}{}", name_prefix, display_name);
-    let truncated_name = if name_text.len() > name_width {
-        format!("{}...", &name_text[..name_width - 3])
-    } else {
-        format!("{:<name_width$}", name_text, name_width = name_width)
-    };
+    let content = format!("{}{}{}", tree_lines, icon, display_name);
 
-    let lines_category = node.metrics.lines_category();
-    let change_category = node.metrics.change_frequency_category();
-
-    let lines_color = get_lines_color(lines_category);
-    let change_color = get_change_frequency_color(change_category);
-
-    // 選択行のスタイル
-    let base_style = if is_selected {
-        Style::default().bg(Color::DarkGray)
-    } else {
-        Style::default()
-    };
-
-    // ヒートマップバーの幅を計算
-    let bar_width = 15;
-    let lines_bar = create_heatmap_bar(lines_category, bar_width, lines_color);
-    let change_bar = create_heatmap_bar(change_category, bar_width, change_color);
-
-    let spans = vec![
-        Span::styled(truncated_name, base_style.fg(Color::White)),
-        Span::styled(
-            format!(" {:>4} ", node.metrics.lines),
-            base_style.fg(lines_color),
-        ),
-        Span::styled(lines_bar, base_style.fg(lines_color)),
-        Span::styled("  ", base_style),
-        Span::styled(
-            format!(" {:>3.1} ", node.metrics.change_frequency),
-            base_style.fg(change_color),
-        ),
-        Span::styled(change_bar, base_style.fg(change_color)),
-    ];
-
-    Line::from(spans)
+    Cell::from(content).style(Style::default().fg(Color::White))
 }
 
-fn create_heatmap_bar(category: usize, max_width: usize, _color: Color) -> String {
-    let filled = (category + 1) * (max_width / 6);
-    let filled = filled.min(max_width);
-    "■".repeat(filled)
+/// LINES列のセルを作成（グラフバー付き）
+fn create_lines_cell(node: &FileNode, is_selected: bool) -> Cell<'static> {
+    let category = node.metrics.lines_category();
+    let color = get_lines_color(category);
+    let bar_bg = if is_selected {
+        Color::DarkGray
+    } else {
+        Color::Rgb(20, 30, 40)
+    };
+
+    let bar_count = (category + 1) * 2;
+    let bar_str = "■".repeat(bar_count);
+
+    // 色インジケーター + 数値 + スペース
+    let indicator = "█";
+    let value_str = format!("{:>13} ", node.metrics.lines);
+
+    let bar_area_width: usize = 30;
+    let content_len = bar_str.len();
+    let remaining = if content_len < bar_area_width {
+        bar_area_width - content_len
+    } else {
+        0
+    };
+    let padding = " ".repeat(remaining);
+
+    let line = Line::from(vec![
+        Span::styled(indicator, Style::default().fg(color)),
+        Span::styled(value_str, Style::default().fg(Color::White)),
+        Span::styled(bar_str, Style::default().fg(color).bg(bar_bg)),
+        Span::styled(padding, Style::default().bg(bar_bg)),
+    ]);
+
+    Cell::from(line)
 }
+
+/// CHANGES列のセルを作成（グラフバー付き）
+fn create_changes_cell(node: &FileNode, is_selected: bool) -> Cell<'static> {
+    let category = node.metrics.change_frequency_category();
+    let color = get_change_frequency_color(category);
+    let bar_bg = if is_selected {
+        Color::DarkGray
+    } else {
+        Color::Rgb(20, 30, 40)
+    };
+
+    let bar_count = (category + 1) * 2;
+    let bar_str = "■".repeat(bar_count);
+
+    // 色インジケーター + 数値 + スペース
+    let indicator = "█";
+    let value_str = format!("{:>13.1} ", node.metrics.change_frequency);
+
+    let bar_area_width: usize = 30;
+    let content_len = bar_str.len();
+    let remaining = if content_len < bar_area_width {
+        bar_area_width - content_len
+    } else {
+        0
+    };
+    let padding = " ".repeat(remaining);
+
+    let line = Line::from(vec![
+        Span::styled(indicator, Style::default().fg(color)),
+        Span::styled(value_str, Style::default().fg(Color::White)),
+        Span::styled(bar_str, Style::default().fg(color).bg(bar_bg)),
+        Span::styled(padding, Style::default().bg(bar_bg)),
+    ]);
+
+    Cell::from(line)
+}
+
+

@@ -26,6 +26,13 @@ impl App {
         result
     }
 
+    /// ツリー罫線情報付きで平坦化
+    pub fn get_flat_tree_with_lines(&self) -> Vec<(usize, FileNode, bool, Vec<bool>)> {
+        let mut result = Vec::new();
+        self.root.flatten_with_lines(0, true, &[], &mut result);
+        result
+    }
+
     /// 選択行を上に移動
     pub fn move_up(&mut self) {
         if self.selected_index > 0 {
