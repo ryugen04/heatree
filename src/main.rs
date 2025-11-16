@@ -58,13 +58,23 @@ fn run_app<B: ratatui::backend::Backend>(
 ) -> Result<()> {
     loop {
         let items = app.get_flat_tree();
-        terminal.draw(|f| render(f, &items))?;
+        let selected_index = app.selected_index;
+        terminal.draw(|f| render(f, &items, selected_index))?;
 
         if event::poll(std::time::Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
                 match key.code {
                     KeyCode::Char('q') | KeyCode::Esc => {
                         app.quit();
+                    }
+                    KeyCode::Char('j') | KeyCode::Down => {
+                        app.move_down();
+                    }
+                    KeyCode::Char('k') | KeyCode::Up => {
+                        app.move_up();
+                    }
+                    KeyCode::Enter | KeyCode::Char(' ') | KeyCode::Char('o') => {
+                        app.toggle_selected();
                     }
                     _ => {}
                 }

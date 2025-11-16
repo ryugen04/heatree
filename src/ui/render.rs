@@ -8,7 +8,7 @@ use ratatui::{
     Frame,
 };
 
-pub fn render(frame: &mut Frame, items: &[(usize, FileNode)]) {
+pub fn render(frame: &mut Frame, items: &[(usize, FileNode)], selected_index: usize) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -18,7 +18,7 @@ pub fn render(frame: &mut Frame, items: &[(usize, FileNode)]) {
         .split(frame.area());
 
     render_legend(frame, chunks[0]);
-    render_tree(frame, chunks[1], items);
+    render_tree(frame, chunks[1], items, selected_index);
 }
 
 fn render_legend(frame: &mut Frame, area: Rect) {
@@ -91,7 +91,7 @@ fn create_legend_line(label: &str, items: &[(usize, &str)], is_lines: bool) -> L
     Line::from(spans)
 }
 
-fn render_tree(frame: &mut Frame, area: Rect, items: &[(usize, FileNode)]) {
+fn render_tree(frame: &mut Frame, area: Rect, items: &[(usize, FileNode)], selected_index: usize) {
     let block = Block::default()
         .borders(Borders::ALL)
         .title("project-root");
@@ -119,9 +119,11 @@ fn render_tree(frame: &mut Frame, area: Rect, items: &[(usize, FileNode)]) {
     };
 
     let mut lines = Vec::new();
-    for (depth, node) in items.iter().skip(1) {
-        // rootをスキップ
-        let line = create_tree_line(*depth, node, inner.width);
+    for (index, (depth, node)) in items.iter().skip(1).enumerate() {
+        // rootをスキップ、インデックスを調整
+        let actual_index = index + 1;
+        let is_selected = actual_index == selected_index;
+        let line = create_tree_line(*depth, node, inner.width, is_selected);
         lines.push(line);
     }
 
@@ -152,8 +154,19 @@ fn create_header_line(width: u16) -> Line<'static> {
     Line::from(spans)
 }
 
-fn create_tree_line(depth: usize, node: &FileNode, width: u16) -> Line<'static> {
-    let indent = "  ".repeat(depth);
+fn create_tree_line(depth: usize, node: &FileNode, width: u16, is_selected: bool) -> Line<'static> {
+    // ツリー罫線を生成（階層構造を視覚化）
+    let tree_lines = if depth > 0 {
+        let mut lines = String::new();
+        for _ in 0..depth - 1 {
+            lines.push_str("  ");  // 親階層のインデント
+        }
+        lines.push_str("│ ");  // 現在の階層の縦線
+        lines
+    } else {
+        String::new()
+    };
+
     let icon = if node.is_dir {
         if node.is_expanded {
             "[▼] "
@@ -164,7 +177,7 @@ fn create_tree_line(depth: usize, node: &FileNode, width: u16) -> Line<'static> 
         "[ ] "
     };
 
-    let name_prefix = format!("{}{}{}", indent, "│ ", icon);
+    let name_prefix = format!("{}{}", tree_lines, icon);
     let display_name = if node.is_dir {
         format!("{}/", node.name)
     } else {
@@ -185,24 +198,31 @@ fn create_tree_line(depth: usize, node: &FileNode, width: u16) -> Line<'static> 
     let lines_color = get_lines_color(lines_category);
     let change_color = get_change_frequency_color(change_category);
 
+    // 選択行のスタイル
+    let base_style = if is_selected {
+        Style::default().bg(Color::DarkGray)
+    } else {
+        Style::default()
+    };
+
     // ヒートマップバーの幅を計算
-    let bar_width = 20;
+    let bar_width = 15;
     let lines_bar = create_heatmap_bar(lines_category, bar_width, lines_color);
     let change_bar = create_heatmap_bar(change_category, bar_width, change_color);
 
     let spans = vec![
-        Span::styled(truncated_name, Style::default().fg(Color::White)),
+        Span::styled(truncated_name, base_style.fg(Color::White)),
         Span::styled(
             format!(" {:>4} ", node.metrics.lines),
-            Style::default().fg(Color::Gray),
+            base_style.fg(lines_color),
         ),
-        Span::styled(lines_bar, Style::default().fg(lines_color)),
-        Span::styled("  ", Style::default()),
+        Span::styled(lines_bar, base_style.fg(lines_color)),
+        Span::styled("  ", base_style),
         Span::styled(
             format!(" {:>3.1} ", node.metrics.change_frequency),
-            Style::default().fg(Color::Gray),
+            base_style.fg(change_color),
         ),
-        Span::styled(change_bar, Style::default().fg(change_color)),
+        Span::styled(change_bar, base_style.fg(change_color)),
     ];
 
     Line::from(spans)
@@ -211,5 +231,5 @@ fn create_tree_line(depth: usize, node: &FileNode, width: u16) -> Line<'static> 
 fn create_heatmap_bar(category: usize, max_width: usize, _color: Color) -> String {
     let filled = (category + 1) * (max_width / 6);
     let filled = filled.min(max_width);
-    "█".repeat(filled)
+    "■".repeat(filled)
 }
