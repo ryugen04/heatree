@@ -97,8 +97,8 @@ fn render_tree(frame: &mut Frame, area: Rect, items: &[(usize, FileNode, bool, V
     // ヘッダー行を作成
     let header = Row::new(vec![
         Cell::from(""),
-        Cell::from(format!("{:>15} ", "LINES")).style(Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
-        Cell::from(format!("{:>15} ", "CHANGES")).style(Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+        Cell::from(format!("{:>20} ", "LINES")).style(Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+        Cell::from(format!("{:>20} ", "CHANGES")).style(Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
     ]);
 
     // データ行を作成
@@ -114,8 +114,8 @@ fn render_tree(frame: &mut Frame, area: Rect, items: &[(usize, FileNode, bool, V
     // 列幅の設定
     let widths = [
         Constraint::Percentage(50),  // Name列（可変）
-        Constraint::Length(32),       // LINES列（固定32文字）
-        Constraint::Length(32),       // CHANGES列（固定32文字）
+        Constraint::Length(40),       // LINES列（固定40文字）
+        Constraint::Length(40),       // CHANGES列（固定40文字）
     ];
 
     let table = Table::new(rows, widths)
@@ -196,72 +196,130 @@ fn create_name_cell(depth: usize, node: &FileNode, is_last: bool, parent_lines: 
 }
 
 /// LINES列のセルを作成（グラフバー付き）
-fn create_lines_cell(node: &FileNode, is_selected: bool) -> Cell<'static> {
+fn create_lines_cell(node: &FileNode, _is_selected: bool) -> Cell<'static> {
     let category = node.metrics.lines_category();
-    let color = get_lines_color(category);
-    let bar_bg = if is_selected {
-        Color::DarkGray
-    } else {
-        Color::Rgb(20, 30, 40)
+    let base_color = get_lines_color(category);
+
+    // カテゴリーの色に基づいた暗めの背景色
+    let bar_bg = match base_color {
+        Color::Rgb(r, g, b) => {
+            Color::Rgb(
+                (r as f32 * 0.35) as u8,
+                (g as f32 * 0.35) as u8,
+                (b as f32 * 0.35) as u8,
+            )
+        },
+        _ => Color::Rgb(20, 30, 40),
+    };
+
+    // カテゴリーに基づいてインジケーターの透明度を調整（数値が小さいほど薄く）
+    let indicator_color = match base_color {
+        Color::Rgb(r, g, b) => {
+            // カテゴリー0(最小)は背景色、カテゴリー5(最大)は元の色
+            let opacity = 0.1 + (category as f32 * 0.18); // 0から5で0.1→1.0
+            let bg_r = 15u8;
+            let bg_g = 15u8;
+            let bg_b = 15u8;
+            Color::Rgb(
+                (bg_r as f32 * (1.0 - opacity) + r as f32 * opacity) as u8,
+                (bg_g as f32 * (1.0 - opacity) + g as f32 * opacity) as u8,
+                (bg_b as f32 * (1.0 - opacity) + b as f32 * opacity) as u8,
+            )
+        },
+        _ => base_color,
     };
 
     let bar_count = (category + 1) * 2;
     let bar_str = "■".repeat(bar_count);
 
-    // 色インジケーター + 数値 + スペース
-    let indicator = "█";
-    let value_str = format!("{:>13} ", node.metrics.lines);
+    // 色インジケーター + 数値
+    let indicator = "█ ";
+    let value_str = format!("{:>6}", node.metrics.lines);
 
-    let bar_area_width: usize = 30;
-    let content_len = bar_str.len();
-    let remaining = if content_len < bar_area_width {
-        bar_area_width - content_len
+    // グラフバー部分（固定幅のボックス）
+    // 最大バー幅（12個の■ = 24文字幅）+ 余裕を持たせて36文字幅
+    let total_bg_width = 36; // 背景エリア全体の固定幅
+
+    // バーの文字幅を計算（■は全角なので2文字幅）
+    let bar_width = bar_count * 2;
+
+    // 背景エリアを固定幅の文字列として構築
+    let bg_content = if bar_width < total_bg_width {
+        format!(" {}{}", bar_str, " ".repeat(total_bg_width - 1 - bar_width))
     } else {
-        0
+        format!(" {}", bar_str)
     };
-    let padding = " ".repeat(remaining);
 
     let line = Line::from(vec![
-        Span::styled(indicator, Style::default().fg(color)),
-        Span::styled(value_str, Style::default().fg(Color::White)),
-        Span::styled(bar_str, Style::default().fg(color).bg(bar_bg)),
-        Span::styled(padding, Style::default().bg(bar_bg)),
+        Span::styled(indicator, Style::default().fg(indicator_color)),
+        Span::styled(value_str, Style::default().fg(base_color)),
+        Span::raw(" "),
+        Span::styled(bg_content, Style::default().fg(base_color).bg(bar_bg)),
     ]);
 
     Cell::from(line)
 }
 
 /// CHANGES列のセルを作成（グラフバー付き）
-fn create_changes_cell(node: &FileNode, is_selected: bool) -> Cell<'static> {
+fn create_changes_cell(node: &FileNode, _is_selected: bool) -> Cell<'static> {
     let category = node.metrics.change_frequency_category();
-    let color = get_change_frequency_color(category);
-    let bar_bg = if is_selected {
-        Color::DarkGray
-    } else {
-        Color::Rgb(20, 30, 40)
+    let base_color = get_change_frequency_color(category);
+
+    // カテゴリーの色に基づいた暗めの背景色
+    let bar_bg = match base_color {
+        Color::Rgb(r, g, b) => {
+            Color::Rgb(
+                (r as f32 * 0.35) as u8,
+                (g as f32 * 0.35) as u8,
+                (b as f32 * 0.35) as u8,
+            )
+        },
+        _ => Color::Rgb(20, 30, 40),
+    };
+
+    // カテゴリーに基づいてインジケーターの透明度を調整（数値が小さいほど薄く）
+    let indicator_color = match base_color {
+        Color::Rgb(r, g, b) => {
+            // カテゴリー0(最小)は背景色、カテゴリー4(最大)は元の色
+            let opacity = 0.1 + (category as f32 * 0.225); // 0から4で0.1→1.0
+            let bg_r = 15u8;
+            let bg_g = 15u8;
+            let bg_b = 15u8;
+            Color::Rgb(
+                (bg_r as f32 * (1.0 - opacity) + r as f32 * opacity) as u8,
+                (bg_g as f32 * (1.0 - opacity) + g as f32 * opacity) as u8,
+                (bg_b as f32 * (1.0 - opacity) + b as f32 * opacity) as u8,
+            )
+        },
+        _ => base_color,
     };
 
     let bar_count = (category + 1) * 2;
     let bar_str = "■".repeat(bar_count);
 
-    // 色インジケーター + 数値 + スペース
-    let indicator = "█";
-    let value_str = format!("{:>13.1} ", node.metrics.change_frequency);
+    // 色インジケーター + 数値
+    let indicator = "█ ";
+    let value_str = format!("{:>6.1}", node.metrics.change_frequency);
 
-    let bar_area_width: usize = 30;
-    let content_len = bar_str.len();
-    let remaining = if content_len < bar_area_width {
-        bar_area_width - content_len
+    // グラフバー部分（固定幅のボックス）
+    // 最大バー幅（12個の■ = 24文字幅）+ 余裕を持たせて36文字幅
+    let total_bg_width = 36; // 背景エリア全体の固定幅
+
+    // バーの文字幅を計算（■は全角なので2文字幅）
+    let bar_width = bar_count * 2;
+
+    // 背景エリアを固定幅の文字列として構築
+    let bg_content = if bar_width < total_bg_width {
+        format!(" {}{}", bar_str, " ".repeat(total_bg_width - 1 - bar_width))
     } else {
-        0
+        format!(" {}", bar_str)
     };
-    let padding = " ".repeat(remaining);
 
     let line = Line::from(vec![
-        Span::styled(indicator, Style::default().fg(color)),
-        Span::styled(value_str, Style::default().fg(Color::White)),
-        Span::styled(bar_str, Style::default().fg(color).bg(bar_bg)),
-        Span::styled(padding, Style::default().bg(bar_bg)),
+        Span::styled(indicator, Style::default().fg(indicator_color)),
+        Span::styled(value_str, Style::default().fg(base_color)),
+        Span::raw(" "),
+        Span::styled(bg_content, Style::default().fg(base_color).bg(bar_bg)),
     ]);
 
     Cell::from(line)
